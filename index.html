@@ -96,6 +96,24 @@
   .period-l{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .period-r{display:flex;gap:8px}
   .period .inp{padding:5px 8px}
+  .viewtabs{display:flex;gap:6px;margin-bottom:16px}
+  .viewtabs button{border:1.5px solid var(--dark);background:transparent;color:var(--soft);border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700}
+  .viewtabs button.on{background:var(--dark);color:#fff}
+  .cmp-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .cmp-tbl{border-collapse:collapse;min-width:100%;font-size:13px}
+  .cmp-tbl th,.cmp-tbl td{padding:9px 12px;border-bottom:1px solid var(--ruleSoft);text-align:right;white-space:nowrap}
+  .cmp-tbl th:first-child,.cmp-tbl td:first-child{text-align:left;position:sticky;left:0;background:var(--card);font-weight:500;min-width:150px}
+  .cmp-tbl thead th{border-bottom:1.5px solid var(--dark);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--soft);vertical-align:bottom}
+  .cmp-tbl .grouprow td{background:var(--bg);font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);text-align:left}
+  .cmp-val{font-variant-numeric:tabular-nums;font-weight:600}
+  .cmp-d{font-size:11px;font-variant-numeric:tabular-nums;display:block;margin-top:1px}
+  .up{color:var(--in)} .down{color:var(--out)} .flat{color:var(--soft)}
+  .basebtn{border:1px solid var(--rule);background:transparent;border-radius:5px;padding:2px 7px;font-size:10.5px;color:var(--soft);cursor:pointer;margin-top:3px;display:inline-block}
+  .basebtn.on{background:var(--yellow);border-color:var(--dark);color:var(--dark);font-weight:700}
+  .pchip{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1.5px solid var(--dark);border-radius:8px;padding:8px 12px;box-shadow:2px 2px 0 var(--dark)}
+  .pchip .x{border:0;background:transparent;color:var(--soft);cursor:pointer;font-size:16px;line-height:1}
+  .summary{background:var(--card);border:1.5px solid var(--dark);border-radius:10px;box-shadow:3px 3px 0 var(--dark);padding:15px 18px;margin-bottom:14px}
+  .summary li{margin:5px 0;line-height:1.45}
   a.io{color:var(--blue);text-decoration:none}
   @media(max-width:560px){ .title{font-size:34px} .tx .cat{width:130px} .kpi{min-width:120px} }
   button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
@@ -132,7 +150,7 @@ function catColor(n){
 }
 
 /* ─────────── состояние ─────────── */
-var S = { tx:[], reports:[], config:{}, mode:'week', active:null, splitId:null, adding:false, gear:false, aggMonth:null, aggDraft:{}, from:'', to:'' };
+var S = { tx:[], reports:[], config:{}, mode:'week', active:null, splitId:null, adding:false, gear:false, aggMonth:null, aggDraft:{}, from:'', to:'', view:'dash', cmp:[], cmpBase:0 };
 
 /* ─────────── утилиты ─────────── */
 function fmt(n){ return new Intl.NumberFormat('ru-RU').format(Math.round(n||0)); }
@@ -259,7 +277,169 @@ function legend(rows,total,wide){
 }
 
 /* ─────────── рендер ─────────── */
+/* ─────────── сравнение периодов ─────────── */
+function daysBetween(from,to){ return Math.round((new Date(to)-new Date(from))/86400000)+1; }
+function lastDayOfMonth(k){ var y=+k.slice(0,4),m=+k.slice(5,7); var d=new Date(y,m,0); return y+'-'+pad(m)+'-'+pad(d.getDate()); }
+
+function cmpPeriodDef(p){
+  if(p.kind==='month'){ var f=p.month+'-01', t=lastDayOfMonth(p.month); return {from:f,to:t,days:daysBetween(f,t),label:monthLabel(p.month)}; }
+  return {from:p.from,to:p.to,days:daysBetween(p.from,p.to),label:fmtRu(p.from)+'–'+fmtRu(p.to)};
+}
+function cmpAgg(def){
+  var rows=S.tx.filter(function(t){ var d=ymd(t.date); return d>=def.from && d<=def.to; });
+  var totIn=0,totOut=0,cats={},chans={};
+  rows.forEach(function(t){
+    if(t.dir==='in'){ totIn+=num(t.amount); var c=t.channel||'Прочее'; chans[c]=(chans[c]||0)+num(t.amount); }
+    else { totOut+=num(t.amount); outByCat(t).forEach(function(x){ cats[x.cat]=(cats[x.cat]||0)+x.amount; }); }
+  });
+  return {totIn:totIn,totOut:totOut,net:totIn-totOut,cats:cats,chans:chans};
+}
+
+function addCmpMonth(k){
+  if(!k) return;
+  if(S.cmp.some(function(p){return p.kind==='range';})){ toast('Тут уже диапазоны. Нельзя смешивать месяцы и диапазоны — очисти или выбери одно.'); return; }
+  if(S.cmp.some(function(p){return p.kind==='month'&&p.month===k;})){ toast('Этот месяц уже добавлен'); return; }
+  S.cmp.push({kind:'month',month:k}); render();
+}
+function addCmpRange(from,to){
+  if(!from||!to){ toast('Укажи обе даты'); return; }
+  if(from>to){ toast('Начало позже конца'); return; }
+  if(S.cmp.some(function(p){return p.kind==='month';})){ toast('Тут уже месяцы. Нельзя смешивать месяцы и диапазоны — очисти или выбери одно.'); return; }
+  var days=daysBetween(from,to);
+  var otherRanges=S.cmp.filter(function(p){return p.kind==='range';});
+  if(otherRanges.length){
+    var need=daysBetween(otherRanges[0].from,otherRanges[0].to);
+    if(days!==need){ toast('Диапазон должен быть '+need+' дн., как первый. У этого '+days+' дн.'); return; }
+  }
+  S.cmp.push({kind:'range',from:from,to:to}); render();
+}
+
+function deltaHtml(cur, base, isBase){
+  if(isBase) return '<span class="cmp-d flat">база</span>';
+  if(base===0){ return cur? '<span class="cmp-d up">новое</span>':'<span class="cmp-d flat">—</span>'; }
+  var pct=(cur-base)/Math.abs(base)*100;
+  var cls=Math.abs(pct)<0.5?'flat':(pct>0?'up':'down');
+  var arr=Math.abs(pct)<0.5?'':(pct>0?'▲':'▼');
+  return '<span class="cmp-d '+cls+'">'+arr+' '+(pct>0?'+':'')+pct.toFixed(0)+'%</span>';
+}
+
+function renderCompare(){
+  var months=uniqMonths();
+  var defs=S.cmp.map(cmpPeriodDef);
+  var aggs=defs.map(cmpAgg);
+  if(S.cmpBase>=S.cmp.length) S.cmpBase=0;
+  var H='';
+
+  H+='<div class="viewtabs no-print">'+
+     '<button data-view="dash">Дашборд</button>'+
+     '<button class="on">Сравнить периоды</button></div>';
+  H+='<div class="head"><div><h1 class="serif title">Сравнить периоды</h1>'+
+     '<div class="sub">Добавь 2+ периода. Итоги, категории и каналы — рядом, с разницей к базовому.</div></div></div>';
+
+  // добавление периодов
+  H+='<div class="period no-print"><div class="period-l">'+
+       '<span class="eyebrow" style="margin-right:2px">Добавить</span>'+
+       '<select class="inp" data-cmp-month><option value="">месяц…</option>'+
+         months.map(function(k){return '<option value="'+k+'">'+monthLabel(k)+'</option>';}).join('')+'</select>'+
+       '<span class="muted" style="font-size:12px">или</span>'+
+       '<input type="date" class="inp" data-cmp-from title="с"><span class="muted">—</span>'+
+       '<input type="date" class="inp" data-cmp-to title="по">'+
+       '<button class="chip" data-cmp-addrange>+ диапазон</button>'+
+     '</div>'+
+     (S.cmp.length?'<div class="period-r"><button class="linkbtn" data-cmp-clear>очистить всё</button></div>':'')+
+     '</div>';
+
+  // чипы добавленных периодов
+  if(S.cmp.length){
+    H+='<div class="row-flex" style="margin-bottom:14px">'+defs.map(function(d,i){
+      return '<div class="pchip"><span style="font-weight:600;font-size:13px">'+esc(d.label)+'</span>'+
+        '<span class="muted" style="font-size:11px">'+d.days+' дн.</span>'+
+        '<button class="x" data-cmp-del="'+i+'">×</button></div>';
+    }).join('')+'</div>';
+  }
+
+  if(S.cmp.length<2){
+    H+='<div class="empty">Добавь хотя бы два периода, чтобы сравнить. Месяцы сравниваются как есть; произвольные диапазоны — только одинаковой длины.</div>';
+    document.getElementById('app').innerHTML=H;
+    bindCompare(); return;
+  }
+
+  // авто-выводы: база vs последний
+  H+=cmpSummary(defs,aggs);
+
+  // таблица
+  var catNames={}, chanNames={};
+  aggs.forEach(function(a){ Object.keys(a.cats).forEach(function(k){catNames[k]=1;}); Object.keys(a.chans).forEach(function(k){chanNames[k]=1;}); });
+  var cats=Object.keys(catNames).sort(function(a,b){return (aggs[S.cmpBase].cats[b]||0)-(aggs[S.cmpBase].cats[a]||0);});
+  var chans=Object.keys(chanNames).sort(function(a,b){return (aggs[S.cmpBase].chans[b]||0)-(aggs[S.cmpBase].chans[a]||0);});
+
+  H+='<div class="card cmp-scroll"><table class="cmp-tbl"><thead><tr><th>Показатель</th>'+
+     defs.map(function(d,i){ return '<th>'+esc(d.label)+'<br><button class="basebtn'+(i===S.cmpBase?' on':'')+'" data-cmp-base="'+i+'">'+(i===S.cmpBase?'✓ база':'сделать базой')+'</button></th>'; }).join('')+
+     '</tr></thead><tbody>';
+
+  function metricRow(name, getter, colorSign){
+    var base=getter(aggs[S.cmpBase]);
+    var tds=aggs.map(function(a,i){
+      var v=getter(a);
+      var col = colorSign ? (name==='Расход'?'var(--out)':(name==='Приход'?'var(--in)':(v>=0?'var(--in)':'var(--out)'))) : 'var(--ink)';
+      return '<td><span class="cmp-val" style="color:'+col+'">'+fmt(v)+'</span>'+deltaHtml(v,base,i===S.cmpBase)+'</td>';
+    }).join('');
+    return '<tr><td>'+name+'</td>'+tds+'</tr>';
+  }
+  H+=metricRow('Приход',function(a){return a.totIn;},true);
+  H+=metricRow('Расход',function(a){return a.totOut;},true);
+  H+=metricRow('Итог',function(a){return a.net;},true);
+
+  H+='<tr class="grouprow"><td colspan="'+(defs.length+1)+'">Расходы по категориям</td></tr>';
+  cats.forEach(function(c){ H+=metricRow(c,function(a){return a.cats[c]||0;},false); });
+  H+='<tr class="grouprow"><td colspan="'+(defs.length+1)+'">Приходы по каналам</td></tr>';
+  chans.forEach(function(c){ H+=metricRow(c,function(a){return a.chans[c]||0;},false); });
+
+  H+='</tbody></table></div>';
+
+  document.getElementById('app').innerHTML=H;
+  bindCompare();
+}
+
+function cmpSummary(defs,aggs){
+  var b=S.cmpBase, last=(b===aggs.length-1)?0:aggs.length-1; // сравниваем базу с другим краем
+  var A=aggs[b], B=aggs[last], dA=defs[b], dB=defs[last];
+  var lines=[];
+  function line(name,va,vb){
+    if(va===0&&vb===0) return;
+    var diff=vb-va;
+    if(va===0){ lines.push({txt:name+': появилось '+fmt(vb)+' (в «'+dA.label+'» не было)', mag:Math.abs(vb)}); return; }
+    var pct=diff/Math.abs(va)*100;
+    if(Math.abs(pct)<1) return;
+    lines.push({txt:name+(diff>0?' вырос':' упал')+' на '+Math.abs(pct).toFixed(0)+'% (было '+fmt(va)+', стало '+fmt(vb)+')', mag:Math.abs(diff)});
+  }
+  line('Приход', A.totIn, B.totIn);
+  line('Расход', A.totOut, B.totOut);
+  var allCats={}; Object.keys(A.cats).forEach(function(k){allCats[k]=1;}); Object.keys(B.cats).forEach(function(k){allCats[k]=1;});
+  Object.keys(allCats).forEach(function(k){ line('Расход на «'+k+'»', A.cats[k]||0, B.cats[k]||0); });
+  var allCh={}; Object.keys(A.chans).forEach(function(k){allCh[k]=1;}); Object.keys(B.chans).forEach(function(k){allCh[k]=1;});
+  Object.keys(allCh).forEach(function(k){ line('Приход по «'+k+'»', A.chans[k]||0, B.chans[k]||0); });
+  lines.sort(function(x,y){return y.mag-x.mag;});
+  var top=lines.slice(0,7);
+  if(!top.length) return '';
+  return '<div class="summary"><div class="eyebrow" style="margin-bottom:8px">Что изменилось: «'+esc(dA.label)+'» → «'+esc(dB.label)+'»</div><ul style="margin:0;padding-left:18px">'+
+    top.map(function(l){return '<li>'+esc(l.txt)+'</li>';}).join('')+'</ul></div>';
+}
+
+function bindCompare(){
+  var app=document.getElementById('app');
+  app.querySelectorAll('[data-view]').forEach(function(b){ b.onclick=function(){ S.view=b.dataset.view; render(); }; });
+  var cm=app.querySelector('[data-cmp-month]'); if(cm) cm.onchange=function(){ addCmpMonth(cm.value); };
+  var ar=app.querySelector('[data-cmp-addrange]'); if(ar) ar.onclick=function(){
+    addCmpRange(app.querySelector('[data-cmp-from]').value, app.querySelector('[data-cmp-to]').value);
+  };
+  app.querySelectorAll('[data-cmp-del]').forEach(function(b){ b.onclick=function(){ S.cmp.splice(+b.dataset.cmpDel,1); if(S.cmpBase>=S.cmp.length)S.cmpBase=0; render(); }; });
+  app.querySelectorAll('[data-cmp-base]').forEach(function(b){ b.onclick=function(){ S.cmpBase=+b.dataset.cmpBase; render(); }; });
+  var cc=app.querySelector('[data-cmp-clear]'); if(cc) cc.onclick=function(){ S.cmp=[]; S.cmpBase=0; render(); };
+}
+
 function render(){
+  if(S.view==='cmp'){ renderCompare(); return; }
   var bs=buckets(), sh=shownTx();
   var totIn=sh.filter(function(t){return t.dir==='in';}).reduce(function(a,t){return a+num(t.amount);},0);
   var totOut=sh.filter(function(t){return t.dir==='out';}).reduce(function(a,t){return a+num(t.amount);},0);
@@ -275,6 +455,11 @@ function render(){
 
   var modeWord={day:'день',week:'неделю',month:'месяц'}[S.mode];
   var H='';
+
+  // переключатель вида
+  H+='<div class="viewtabs no-print">'+
+     '<button class="on">Дашборд</button>'+
+     '<button data-view="cmp">Сравнить периоды</button></div>';
 
   // шапка
   H+='<div class="head"><div>'+
@@ -488,6 +673,7 @@ function splitEditor(t){
 /* ─────────── события ─────────── */
 function bind(){
   var app=document.getElementById('app');
+  app.querySelectorAll('[data-view]').forEach(function(b){ b.onclick=function(){ S.view=b.dataset.view; render(); }; });
   // режим
   app.querySelectorAll('[data-mode]').forEach(function(b){ b.onclick=function(){ S.mode=b.dataset.mode; S.active=null; S.from=''; S.to=''; render(); }; });
   // шестерёнка
