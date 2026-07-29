@@ -135,6 +135,16 @@ function monthKey(d){ return String(d).slice(0,7); }
 function monthLabel(k){ return MON[Number(k.slice(5,7))-1]+' '+k.slice(0,4); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
+/* нормализация даты: Sheets отдаёт то строку YYYY-MM-DD, то ISO с временем, то Date */
+function ymd(v){
+  if(v==null||v==='') return '';
+  var s=String(v);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;        // чистая дата — как есть
+  var d=new Date(v);                                  // ISO со временем / Date → локальное время
+  if(!isNaN(d)) return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  return s.slice(0,10);
+}
+
 function bucketOf(dateStr, mode){
   var d=new Date(dateStr+'T00:00:00');
   if(mode==='day') return {key:dateStr,label:pad(d.getDate())+'.'+pad(d.getMonth()+1)};
@@ -149,7 +159,7 @@ function outByCat(tx){ var sp=parseSplits(tx.splits); return sp?sp.map(function(
 function load(){
   fetch(API+'?action=getAll').then(function(r){return r.json();}).then(function(d){
     if(!d||!d.ok) throw new Error('bad');
-    S.tx=(d.tx||[]).map(function(t){ t.amount=num(t.amount); return t; });
+    S.tx=(d.tx||[]).map(function(t){ t.amount=num(t.amount); t.date=ymd(t.date); if(t.tradeDate)t.tradeDate=ymd(t.tradeDate); return t; });
     S.reports=d.reports||[];
     S.config=d.config||{};
     if(S.config.defaultMode) S.mode=S.config.defaultMode;
