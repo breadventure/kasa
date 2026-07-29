@@ -108,9 +108,10 @@ var API = 'https://script.google.com/macros/s/AKfycbxOe9cad0ezo7_pWEJA_y_O3TvzuI
 var KEY = 'bv-kasa-2026-ed01';
 
 var CAT_OUT = [
-  ['Сырьё','#8C5A2B'],['Зарплаты','#B4463F'],['Аренда','#5B6BA8'],['Коммуналка','#2F6690'],
-  ['Доставка','#2E7D6B'],['Налоги','#4A4A55'],['Упаковка','#B08900'],['Оборудование','#7A3E8F'],
-  ['Комиссии агрегаторов','#C2632F'],['Прочее','#9A9A90']
+  ['Ингредиенты','#8C5A2B'],['Снабжение','#B08900'],['Зарплаты','#B4463F'],['Аренда','#5B6BA8'],
+  ['Услуги','#2F6690'],['Налоги','#4A4A55'],['Маркетинг','#C2632F'],['Типография','#7A3E8F'],
+  ['Интернет','#2E7D6B'],['Бухгалтерия','#3E7C8F'],['Банковская комиссия','#8A6D3B'],
+  ['Снятие наличных','#6E6F68'],['Комиссии агрегаторов','#C79A00'],['Прочее','#9A9A90']
 ];
 var CAT_IN = [
   ['Розница','#2E7D6B'],['B2B','#2F6690'],['Wolt','#1E88A8'],['Glovo','#C79A00'],['Njuppa','#7A3E8F'],['Прочее','#9A9A90']
@@ -499,7 +500,7 @@ function toggleSplit(id){
   if(S.splitId===id){ S.splitId=null; render(); return; }
   var t=S.tx.filter(function(x){return x.id===id;})[0];
   var sp=parseSplits(t.splits);
-  SPLIT_ROWS=sp?sp.map(function(s){return {cat:s.cat,amount:s.amount};}):[{cat:'Сырьё',amount:''}];
+  SPLIT_ROWS=sp?sp.map(function(s){return {cat:s.cat,amount:s.amount};}):[{cat:CAT_OUT[0][0],amount:''}];
   S.splitId=id; render();
 }
 function bindSplit(app){
