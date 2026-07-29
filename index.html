@@ -375,9 +375,9 @@ function commissions(){
     H+='<div class="agg-tr"><span style="flex:1 1 84px;display:flex;align-items:center;gap:7px;font-size:13px"><span class="dot" style="background:'+catColor(ch)+'"></span>'+ch+'</span>'+
       '<span class="mono" style="width:90px;text-align:right;color:var(--in);font-size:12.5px">'+fmt(nt)+'</span>'+
       '<input type="number" class="inp mono" data-aggin="'+ch+'" value="'+esc(raw)+'" placeholder="—" style="width:104px;text-align:right'+(bad?';border-color:var(--out)':'')+'">'+
-      '<span class="mono" style="width:90px;text-align:right;font-size:12.5px;color:'+(has?'var(--out)':'var(--soft)')+';font-weight:600">'+(has?'−'+fmt(fee):'—')+'</span>'+
-      '<span class="mono" style="width:50px;text-align:right;font-size:12.5px;font-weight:700;color:'+(has?'var(--ink)':'var(--soft)')+'">'+(has?((fee/g)*100).toFixed(1)+'%':'—')+'</span>'+
-      (bad?'<div style="flex-basis:100%;font-size:11.5px;color:var(--out);padding-top:2px">Заработок меньше, чем пришло на счёт. Проверь, не чистая ли это сумма.</div>':'')+'</div>';
+      '<span class="mono" data-aggfee="'+ch+'" style="width:90px;text-align:right;font-size:12.5px;color:'+(has?'var(--out)':'var(--soft)')+';font-weight:600">'+(has?'−'+fmt(fee):'—')+'</span>'+
+      '<span class="mono" data-aggpct="'+ch+'" style="width:50px;text-align:right;font-size:12.5px;font-weight:700;color:'+(has?'var(--ink)':'var(--soft)')+'">'+(has?((fee/g)*100).toFixed(1)+'%':'—')+'</span>'+
+      '<span data-aggwarn="'+ch+'" style="flex-basis:100%;font-size:11.5px;color:var(--out);padding-top:2px;display:'+(bad?'block':'none')+'">Заработок меньше, чем пришло на счёт. Проверь, не чистая ли это сумма.</span></div>';
   });
   var dirty=AGG.some(function(ch){ return String((S.aggDraft[m]||{})[ch]==null?'':S.aggDraft[m][ch])!==String((reportsToDraft()[m]||{})[ch]==null?'':reportsToDraft()[m][ch]); });
   var bad=AGG.some(function(ch){ var g=num((S.aggDraft[m]||{})[ch]); return g>0 && g-net(ch)<0; });
@@ -425,8 +425,9 @@ function txRow(t){
   return H;
 }
 function catTag(t){
-  if(!t.category) return '<button class="tag empty" data-catopen="'+t.id+'">без категории</button>';
-  return '<button class="tag" data-catopen="'+t.id+'"><span class="dot" style="background:'+catColor(t.category)+'"></span>'+esc(t.category)+'</button>';
+  var val = t.dir==='in' ? t.channel : t.category;
+  if(!val) return '<button class="tag empty" data-catopen="'+t.id+'">без категории</button>';
+  return '<button class="tag" data-catopen="'+t.id+'"><span class="dot" style="background:'+catColor(val)+'"></span>'+esc(val)+'</button>';
 }
 
 /* ── редактор разбивки ── */
@@ -471,7 +472,14 @@ function bind(){
   bindSplit(app);
   // агрегаторы
   var am=app.querySelector('[data-aggmonth]'); if(am) am.onchange=function(){ S.aggMonth=am.value; if(!S.aggDraft[am.value]) S.aggDraft[am.value]=Object.assign({},(reportsToDraft()[am.value]||{})); render(); };
-  app.querySelectorAll('[data-aggin]').forEach(function(inp){ inp.oninput=function(){ S.aggDraft[S.aggMonth]=S.aggDraft[S.aggMonth]||{}; S.aggDraft[S.aggMonth][inp.dataset.aggin]=inp.value; renderAggOnly(); }; });
+  app.querySelectorAll('[data-aggin]').forEach(function(inp){
+    inp.oninput=function(){
+      S.aggDraft[S.aggMonth]=S.aggDraft[S.aggMonth]||{};
+      S.aggDraft[S.aggMonth][inp.dataset.aggin]=inp.value;
+      updateAggRow(inp.dataset.aggin);   // точечный пересчёт строки, без полной перерисовки
+      updateAggConfirm();
+    };
+  });
   var ac=app.querySelector('[data-aggconfirm]'); if(ac) ac.onclick=confirmAgg;
   // добавить
   var add=app.querySelector('[data-add]'); if(add) add.onclick=function(){ S.adding=true; render(); };
@@ -488,12 +496,39 @@ function openCatPicker(id){
   var pop=document.createElement('div'); pop.className='pop';
   pop.innerHTML=cats.map(function(c){return '<button data-pick="'+c[0]+'"><span class="dot" style="background:'+c[1]+'"></span>'+c[0]+'</button>';}).join('');
   cell.appendChild(pop);
-  pop.querySelectorAll('[data-pick]').forEach(function(b){ b.onclick=function(){ setCategory(id,b.dataset.pick); }; });
+  pop.querySelectorAll('[data-pick]').forEach(function(b){ b.onclick=function(){ if(t.dir==='in') setChannel(id,b.dataset.pick); else setCategory(id,b.dataset.pick); }; });
 }
 function setCategory(id,cat){
   var t=S.tx.filter(function(x){return x.id===id;})[0]; if(t){ t.category=cat; t.splits=''; }
   render();
   post('setCategory',{id:id,category:cat}).then(function(r){ toast(r&&r.ok?'Категория сохранена':'Не сохранилось'); if(!r||!r.ok) load(); });
+  // предложить запомнить правило для этого контрагента
+  if(t) offerRemember(t, cat, t.dir);
+}
+
+/* «запомнить»: спросить слово-ключ и создать правило контрагент→категория */
+function offerRemember(t, target, dir){
+  var name = String(t.counterparty||'').trim();
+  if(!name) return;
+  // предлагаем первое значимое слово как ключ
+  var suggested = (name.split(/[\s,]+/).filter(function(w){return w.length>=3;})[0]||name).slice(0,40);
+  var kw = window.prompt(
+    'Запомнить правило: все приходы/расходы, где встречается это слово, будут автоматически попадать в «'+target+'».\n\n'+
+    'По какому слову узнавать контрагента? (можно сократить)',
+    suggested
+  );
+  if(kw===null) return;            // отмена
+  kw = kw.trim(); if(!kw) return;
+  post('addRule',{keyword:kw, dir:dir, target:target, kind: dir==='in'?'channel':'category'}).then(function(r){
+    toast(r&&r.ok ? ('Запомнил: «'+kw+'» → '+target) : 'Правило не сохранилось');
+  });
+}
+
+function setChannel(id,ch){
+  var t=S.tx.filter(function(x){return x.id===id;})[0]; if(t){ t.channel=ch; }
+  render();
+  post('setChannel',{id:id,channel:ch}).then(function(r){ toast(r&&r.ok?'Канал сохранён':'Не сохранилось'); if(!r||!r.ok) load(); });
+  if(t) offerRemember(t, ch, 'in');
 }
 
 function toggleSplit(id){
@@ -553,11 +588,25 @@ function saveConfig(patch){
   post('setConfig',{config:patch}).then(function(r){ if(!r||!r.ok) toast('Настройка не сохранилась'); });
 }
 
-function renderAggOnly(){ // перерисовать только карточку агрегаторов, чтобы фокус в поле не терялся
-  // проще — полный render, но вернуть фокус
-  var active=document.activeElement, ch=active&&active.dataset?active.dataset.aggin:null, pos=active?active.selectionStart:null;
-  render();
-  if(ch){ var el=document.querySelector('[data-aggin="'+ch+'"]'); if(el){ el.focus(); try{el.setSelectionRange(pos,pos);}catch(e){} } }
+function netOfMonth(ch,m){ return S.tx.filter(function(t){return t.dir==='in'&&t.channel===ch&&monthKey(ymd(t.date))===m;}).reduce(function(a,t){return a+num(t.amount);},0); }
+
+function updateAggRow(ch){
+  var m=S.aggMonth, g=num((S.aggDraft[m]||{})[ch]), nt=netOfMonth(ch,m), has=g>0, fee=g-nt, bad=has&&fee<0;
+  var feeEl=document.querySelector('[data-aggfee="'+ch+'"]');
+  var pctEl=document.querySelector('[data-aggpct="'+ch+'"]');
+  var warnEl=document.querySelector('[data-aggwarn="'+ch+'"]');
+  var inEl=document.querySelector('[data-aggin="'+ch+'"]');
+  if(feeEl){ feeEl.textContent=has?'−'+fmt(fee):'—'; feeEl.style.color=has?'var(--out)':'var(--soft)'; }
+  if(pctEl){ pctEl.textContent=has?((fee/g)*100).toFixed(1)+'%':'—'; pctEl.style.color=has?'var(--ink)':'var(--soft)'; }
+  if(warnEl){ warnEl.style.display=bad?'block':'none'; }
+  if(inEl){ inEl.style.borderColor=bad?'var(--out)':'var(--rule)'; }
+}
+function updateAggConfirm(){
+  var m=S.aggMonth;
+  var dirty=AGG.some(function(ch){ return String((S.aggDraft[m]||{})[ch]==null?'':S.aggDraft[m][ch])!==String((reportsToDraft()[m]||{})[ch]==null?'':reportsToDraft()[m][ch]); });
+  var bad=AGG.some(function(ch){ var g=num((S.aggDraft[m]||{})[ch]); return g>0 && g-netOfMonth(ch,m)<0; });
+  var btn=document.querySelector('[data-aggconfirm]');
+  if(btn){ if(dirty&&!bad) btn.removeAttribute('disabled'); else btn.setAttribute('disabled','1'); }
 }
 
 function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove('show');},1900); }
