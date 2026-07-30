@@ -754,7 +754,11 @@ function offerRemember(t, target, dir){
   if(kw===null) return;
   kw = kw.trim(); if(!kw) return;
   post('addRule',{keyword:kw, dir:dir, target:target, kind: dir==='in'?'channel':'category'}).then(function(r){
-    toast(r&&r.ok ? ('Запомнил: «'+kw+'» → '+target) : 'Правило не сохранилось');
+    if(r&&r.ok){
+      var n=r.applied||0;
+      toast('Запомнил: «'+kw+'» → '+target+(n?(' · применил к '+n+' операциям'):''));
+      if(n) load();   // подтянуть перекрашенные строки
+    } else toast('Правило не сохранилось');
   });
 }
 
