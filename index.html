@@ -735,7 +735,7 @@ function openCatPicker(id){
 function setCategory(id,cat){
   var t=S.tx.filter(function(x){return x.id===id;})[0]; if(t){ t.category=cat; t.splits=''; }
   render();
-  post('setCategory',{id:id,category:cat}).then(function(r){ toast(r&&r.ok?'Категория сохранена':'Не сохранилось'); if(!r||!r.ok) load(); });
+  post('setCategory',{id:id,category:cat}).then(function(r){ toast(r&&r.ok?'Категория сохранена':'Не сохранилось — проверь, что Code.gs обновлён'); });
 }
 
 /* «запомнить»: спросить слово-ключ и создать правило контрагент→категория */
@@ -761,7 +761,7 @@ function offerRemember(t, target, dir){
 function setChannel(id,ch){
   var t=S.tx.filter(function(x){return x.id===id;})[0]; if(t){ t.channel=ch; }
   render();
-  post('setChannel',{id:id,channel:ch}).then(function(r){ toast(r&&r.ok?'Канал сохранён':'Не сохранилось'); if(!r||!r.ok) load(); });
+  post('setChannel',{id:id,channel:ch}).then(function(r){ toast(r&&r.ok?'Канал сохранён':'Не сохранилось — проверь, что Code.gs обновлён'); });
 }
 
 function toggleSplit(id){
@@ -790,7 +790,7 @@ function saveSplit(id){
   var rows=SPLIT_ROWS.map(function(r){return {cat:r.cat,amount:num(r.amount)};});
   var t=S.tx.filter(function(x){return x.id===id;})[0]; if(t){ t.splits=JSON.stringify(rows); t.category=''; }
   S.splitId=null; render();
-  post('saveSplit',{id:id,splits:rows}).then(function(r){ toast(r&&r.ok?'Разбивка сохранена':'Не сохранилось'); if(!r||!r.ok) load(); });
+  post('saveSplit',{id:id,splits:rows}).then(function(r){ toast(r&&r.ok?'Разбивка сохранена':'Не сохранилось — проверь, что Code.gs обновлён'); });
 }
 
 function confirmAgg(){
