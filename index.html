@@ -70,6 +70,10 @@
   .pop{position:absolute;top:24px;left:0;z-index:30;background:var(--card);border:1.5px solid var(--dark);border-radius:8px;box-shadow:3px 3px 0 var(--dark);padding:5px;min-width:150px}
   .pop button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;padding:6px 8px;font-size:12.5px;text-align:left;border-radius:5px}
   .pop button:hover{background:var(--ruleSoft)}
+  .pop .pickrow{display:flex;align-items:center;gap:2px}
+  .pop .pickrow>button[data-pick]{flex:1}
+  .pop .star{border:0;background:transparent;color:var(--rule);cursor:pointer;font-size:15px;padding:4px 8px;border-radius:5px;flex:0 0 auto}
+  .pop .star:hover{color:#E0A800;background:var(--yellow)}
   /* split */
   .split{background:#FBF7E8;border-left:3px solid var(--yellow);padding:14px 16px}
   .split .srow{display:flex;gap:8px;align-items:center;margin-bottom:7px}
@@ -721,16 +725,21 @@ function openCatPicker(id){
   var cell=document.querySelector('[data-catcell="'+id+'"]'); if(!cell)return;
   var old=cell.querySelector('.pop'); if(old){ old.remove(); return; }
   var pop=document.createElement('div'); pop.className='pop';
-  var cur = t.dir==='in' ? t.channel : t.category;
+  var hasName = !!String(t.counterparty||'').trim();
   pop.innerHTML=
-    cats.map(function(c){return '<button data-pick="'+c[0]+'"><span class="dot" style="background:'+c[1]+'"></span>'+c[0]+'</button>';}).join('')+
-    (cur && String(t.counterparty||'').trim()
-      ? '<div style="border-top:1px solid var(--ruleSoft);margin:4px 0"></div>'+
-        '<button data-remember style="color:var(--blue);font-weight:600">✓ запомнить «'+esc(cur)+'» для этого поставщика</button>'
-      : '');
+    '<div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);padding:4px 8px 6px">Тык — разово · ★ — запомнить поставщика</div>'+
+    cats.map(function(c){
+      return '<div class="pickrow"><button data-pick="'+c[0]+'"><span class="dot" style="background:'+c[1]+'"></span>'+c[0]+'</button>'+
+        (hasName?'<button class="star" data-remember="'+c[0]+'" title="запомнить для этого поставщика">★</button>':'')+'</div>';
+    }).join('');
   cell.appendChild(pop);
   pop.querySelectorAll('[data-pick]').forEach(function(b){ b.onclick=function(){ if(t.dir==='in') setChannel(id,b.dataset.pick); else setCategory(id,b.dataset.pick); }; });
-  var rem=pop.querySelector('[data-remember]'); if(rem) rem.onclick=function(){ pop.remove(); offerRemember(t, cur, t.dir); };
+  pop.querySelectorAll('[data-remember]').forEach(function(b){ b.onclick=function(){
+    var cat=b.dataset.remember; pop.remove();
+    // сначала проставляем локально + на сервер, потом предлагаем запомнить
+    if(t.dir==='in') setChannel(id,cat); else setCategory(id,cat);
+    offerRemember(t, cat, t.dir);
+  }; });
 }
 function setCategory(id,cat){
   var t=S.tx.filter(function(x){return x.id===id;})[0]; if(t){ t.category=cat; t.splits=''; }
@@ -756,8 +765,16 @@ function offerRemember(t, target, dir){
   post('addRule',{keyword:kw, dir:dir, target:target, kind: dir==='in'?'channel':'category'}).then(function(r){
     if(r&&r.ok){
       var n=r.applied||0;
+      // перекрашиваем строки в памяти локально — без перезагрузки, период не слетает
+      var low=kw.toLowerCase();
+      S.tx.forEach(function(t){
+        if(t.dir!==dir) return;
+        if(String(t.counterparty||'').toLowerCase().indexOf(low)<0) return;
+        if(parseSplits(t.splits)) return;
+        if(dir==='in') t.channel=target; else { t.category=target; t.splits=''; }
+      });
       toast('Запомнил: «'+kw+'» → '+target+(n?(' · применил к '+n+' операциям'):''));
-      if(n) load();   // подтянуть перекрашенные строки
+      render();
     } else toast('Правило не сохранилось');
   });
 }
