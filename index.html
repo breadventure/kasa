@@ -142,8 +142,11 @@ var CAT_OUT = [
   ['Снятие наличных','#6E6F68'],['Комиссии агрегаторов','#C79A00'],['Прочее','#9A9A90']
 ];
 var CAT_IN = [
-  ['Розница','#2E7D6B'],['B2B','#2F6690'],['Wolt','#1E88A8'],['Glovo','#C79A00'],['Njuppa','#7A3E8F'],['Прочее','#9A9A90']
+  ['Розница','#2E7D6B'],['B2B','#2F6690'],['Wolt','#1E88A8'],['Glovo','#C79A00'],['Njuppa','#7A3E8F'],['Внесение личных','#B0A8C8'],['Прочее','#9A9A90']
 ];
+// каналы прихода, которые НЕ являются выручкой (пополнения, переводы себе)
+var NOT_REVENUE = ['Внесение личных'];
+function isRevenue(t){ return !(t.dir==='in' && NOT_REVENUE.indexOf(t.channel)>=0); }
 var AGG = ['Wolt','Glovo','Njuppa'];
 var MON = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
 var MON_FULL = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
@@ -293,7 +296,7 @@ function cmpAgg(def){
   var rows=S.tx.filter(function(t){ var d=ymd(t.date); return d>=def.from && d<=def.to; });
   var totIn=0,totOut=0,cats={},chans={};
   rows.forEach(function(t){
-    if(t.dir==='in'){ totIn+=num(t.amount); var c=t.channel||'Прочее'; chans[c]=(chans[c]||0)+num(t.amount); }
+    if(t.dir==='in' && isRevenue(t)){ totIn+=num(t.amount); var c=t.channel||'Прочее'; chans[c]=(chans[c]||0)+num(t.amount); }
     else { totOut+=num(t.amount); outByCat(t).forEach(function(x){ cats[x.cat]=(cats[x.cat]||0)+x.amount; }); }
   });
   return {totIn:totIn,totOut:totOut,net:totIn-totOut,cats:cats,chans:chans};
@@ -445,14 +448,14 @@ function bindCompare(){
 function render(){
   if(S.view==='cmp'){ renderCompare(); return; }
   var bs=buckets(), sh=shownTx();
-  var totIn=sh.filter(function(t){return t.dir==='in';}).reduce(function(a,t){return a+num(t.amount);},0);
+  var totIn=sh.filter(function(t){return t.dir==='in'&&isRevenue(t);}).reduce(function(a,t){return a+num(t.amount);},0);
   var totOut=sh.filter(function(t){return t.dir==='out';}).reduce(function(a,t){return a+num(t.amount);},0);
   var rangeLabel = rangeActive() ? (fmtRu(S.from)+' — '+fmtRu(S.to)) : null;
   var activeLabel = rangeLabel || (S.active?(bs.filter(function(b){return b.key===S.active;})[0]||{}).label:null);
   var per=activeLabel?('за '+activeLabel):'за всё время';
 
   // круги
-  var dinM={}; sh.filter(function(t){return t.dir==='in';}).forEach(function(t){ var c=t.channel||'Прочее'; dinM[c]=(dinM[c]||0)+num(t.amount); });
+  var dinM={}; sh.filter(function(t){return t.dir==='in'&&isRevenue(t);}).forEach(function(t){ var c=t.channel||'Прочее'; dinM[c]=(dinM[c]||0)+num(t.amount); });
   var donutIn=Object.keys(dinM).map(function(k){return {name:k,value:dinM[k]};}).sort(function(a,b){return b.value-a.value;});
   var doutM={}; sh.filter(function(t){return t.dir==='out';}).forEach(function(t){ outByCat(t).forEach(function(x){ doutM[x.cat]=(doutM[x.cat]||0)+x.amount; }); });
   var donutOut=Object.keys(doutM).map(function(k){return {name:k,value:doutM[k]};}).sort(function(a,b){return b.value-a.value;});
@@ -870,9 +873,9 @@ document.addEventListener('click',function(){ document.querySelectorAll('.pop').
 /* ─────────── выгрузка отчётов ─────────── */
 function reportData(){
   var sh = shownTx().slice().sort(function(a,b){ return ymd(a.date)<ymd(b.date)?-1:1; });
-  var totIn = sh.filter(function(t){return t.dir==='in';}).reduce(function(a,t){return a+num(t.amount);},0);
+  var totIn = sh.filter(function(t){return t.dir==='in'&&isRevenue(t);}).reduce(function(a,t){return a+num(t.amount);},0);
   var totOut = sh.filter(function(t){return t.dir==='out';}).reduce(function(a,t){return a+num(t.amount);},0);
-  var inM={}; sh.filter(function(t){return t.dir==='in';}).forEach(function(t){ var c=t.channel||'Прочее'; inM[c]=(inM[c]||0)+num(t.amount); });
+  var inM={}; sh.filter(function(t){return t.dir==='in'&&isRevenue(t);}).forEach(function(t){ var c=t.channel||'Прочее'; inM[c]=(inM[c]||0)+num(t.amount); });
   var chans=Object.keys(inM).map(function(k){return {name:k,value:inM[k]};}).sort(function(a,b){return b.value-a.value;});
   var outM={}; sh.filter(function(t){return t.dir==='out';}).forEach(function(t){ outByCat(t).forEach(function(x){ outM[x.cat]=(outM[x.cat]||0)+x.amount; }); });
   var cats=Object.keys(outM).map(function(k){return {name:k,value:outM[k]};}).sort(function(a,b){return b.value-a.value;});
